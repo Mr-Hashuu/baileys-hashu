@@ -10,10 +10,10 @@
     "buttons",
     "bot"
   ],
-  "homepage": "https://github.com/mr-hashuu/hashu-baileys",
+  "homepage": "https://github.com/Mr-Hashuu/baileys-hashu",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mr-hashuu/hashu-baileys.git"
+    "url": "git+https://github.com/Mr-Hashuu/baileys-hashu.git"
   },
   "license": "MIT",
   "author": "HASHU (fork of Baileys by Rajeh Taher)",
