@@ -1,0 +1,78 @@
+name: Hashu
+
+# One workflow for everything, so it is the only file you have to paste into GitHub by hand.
+#  - Run workflow, mode "unpack": unzips an uploaded *.zip from the repo root into the repo (no PC needed)
+#  - Create a GitHub Release (tag like v1.2.0): builds and publishes to npm
+#  - Run workflow, mode "publish" or "stage": same as a release, "stage" uses npm staged publishing
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'unpack = unzip the uploaded zip into the repo, publish = npm publish, stage = npm stage publish'
+        type: choice
+        options: [unpack, publish, stage]
+        default: unpack
+
+jobs:
+  unpack:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'unpack'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip into the repo
+        run: |
+          zipfile=$(ls *.zip 2>/dev/null | head -1)
+          if [ -z "$zipfile" ]; then echo "No .zip file found in the repo root. Upload hashu-baileys.zip first."; exit 1; fi
+          mkdir /tmp/unpacked
+          unzip -q "$zipfile" -d /tmp/unpacked
+          # the zip has one folder inside, copy what is in it. .github is skipped, GitHub does not let Actions change workflow files
+          top=$(ls /tmp/unpacked | head -1)
+          tar -C "/tmp/unpacked/$top" --exclude='./.github' -cf - . | tar -xf -
+          rm "$zipfile"
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Add hashu-baileys source"
+          git push
+
+  publish:
+    if: github.event_name == 'release' || github.event.inputs.mode == 'publish' || github.event.inputs.mode == 'stage'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # yarn.lock is git ignored in this repo, so plain npm install is used (it also runs the build via "prepare")
+      - name: Install and build
+        run: |
+          npm install
+          npm run build
+
+      - name: Check for auto-follow malware patterns
+        run: node scripts/audit-baileys-fork.cjs .
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "stage" ]; then
+            npm stage publish --access public
+          else
+            npm publish --access public
+          fi
