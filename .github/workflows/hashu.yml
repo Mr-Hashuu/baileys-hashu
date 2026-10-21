@@ -1,0 +1,62 @@
+name: Hashu
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'unpack, publish or stage'
+        type: choice
+        options: [unpack, publish, stage]
+        default: unpack
+
+jobs:
+  unpack:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'unpack'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unzip into the repo
+        run: |
+          zipfile=$(ls *.zip 2>/dev/null | head -1)
+          if [ -z "$zipfile" ]; then echo "No zip found"; exit 1; fi
+          mkdir /tmp/unpacked
+          unzip -q "$zipfile" -d /tmp/unpacked
+          top=$(ls /tmp/unpacked | head -1)
+          tar -C "/tmp/unpacked/$top" --exclude='./.github' -cf - . | tar -xf -
+          rm "$zipfile"
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Add hashu-baileys source"
+          git push
+
+  publish:
+    if: github.event_name == 'release' || github.event.inputs.mode == 'publish' || github.event.inputs.mode == 'stage'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: |
+          npm install
+          npm run build
+      - run: node scripts/audit-baileys-fork.cjs .
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "stage" ]; then
+            npm stage publish --access public
+          else
+            npm publish --access public
+          fi
